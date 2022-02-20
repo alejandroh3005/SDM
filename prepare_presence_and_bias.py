@@ -14,6 +14,7 @@ completed "by hand".
 
 Process: Occurrence Raster --> Points --> Projected Points (with Long/Lat) --> Rarefied Points --> Bias File
 """
+
 import os
 from datetime import datetime
 import arcpy
@@ -85,3 +86,10 @@ print datetime.now().strftime("%H:%M - "), "Longitude and latitude features have
 # Convert rarefied point SHAPE files to CSV files.
 
 # Create bias file from rarefied points
+# cannot automate with ArcPy
+
+bias_file = r"C:\Users\alega\PycharmProjects\SDM\data\madagascar\bias\BiasFile\Furcifer_oustaleti.asc"
+bias_points = r"C:\Users\alega\PycharmProjects\SDM\data\madagascar\bias\Furcifer_oustaleti_points.shp"
+arcpy.RasterToPoint_conversion(in_raster=bias_file,
+                               out_point_features=bias_points)
+arcpy.AddXY_management(in_features=bias_points)
