@@ -1,49 +1,58 @@
-from geopandas import read_file, sjoin
+import os
 import pandas as pd
+import geopandas as gpd
 
-class SpatialJoin:
-    def __init__(self, source):
-        PRESENCE_ONLY = True
-        N_YEARS = 19
-        # Parent directory and file locations
-        parent_directory = r"C:\Users\alega\PycharmProjects\SDM"
-        if source == "CA":
-            rarefied_points = fr"{parent_directory}\CA_Rarefied\Strawberry\strawb_spatially_rarified_locs.shp"
-            raster_polygons = [fr"{parent_directory}\CA_Polygons\bio_{num + 1}.shp" for num in range(N_YEARS)]
-        elif source == "MD":
-            rarefied_points = fr"{parent_directory}\MD_Rarefied\halfoccurence__spatially_rarified_locs.shp"
-            raster_polygons = [fr"{parent_directory}\MD_Polygons\bio_{num + 1}.shp" for num in range(N_YEARS)]
-        else:
-            print("Invalid 'source' parameter.")
-            rarefied_points, raster_polygons = None, None
+def create_geodataframes(source="madagascar", species="all", data_dir=r"C:\Users\alega\PycharmProjects\SDM\data"):
+    if source not in ["california", "madagascar"]:
+        exit("Invalid 'source' parameter.")
 
-        """Organize Point data into a GeoDataFrame"""
-        point_df = read_file(rarefied_points)
-        if source == "CA":
-            point_df = point_df.rename(columns={"grid_code": "species"})
-        elif source == "MD":
-            species = point_df["species"].values
-            for i in range(len(species)):
-                if species[i] == "Furcifer_pardalis": species[i] = 0
-                else: species[i] = 1
-            point_df["species"] = species
-            if PRESENCE_ONLY:  # Remove all FP occurrences
-                point_df = point_df[point_df.species != 0]
+    # Set directories and file locations
+    rarefied_dir = fr"{data_dir}\{source}\rarefied\{species}"
+    bias_dir = fr"{data_dir}\{source}\bias"
+    polygon_dir = fr"{data_dir}\{source}\polygons"
 
-        """Organize Polygon data into a GeoDataFrame"""
-        polygon_df = read_file(raster_polygons[0]).rename(columns={"grid_code": "bio_1"})
-        for count, polygon in enumerate(raster_polygons[1:]):
-            curr_polygon_df = read_file(polygon).rename(columns={"grid_code": f"bio_{count + 2}"})
-            polygon_df = polygon_df.join(curr_polygon_df[f"bio_{count + 2}"])
+    # Organize Point shapefiles into a GeoDataFrame
+    point_df = gpd.GeoDataFrame(data=None)
+    for point_file in os.listdir(rarefied_dir):
+        if point_file.endswith('.shp'):
+            point_file = rarefied_dir + "\\" + point_file
+            point_df = gpd.read_file(point_file)
 
-        """Use Spatial Join tool and save DataFrame to csv file"""
-        joined_df = sjoin(point_df, polygon_df, op="within").drop(columns=["geometry", "index_right"])
-        self.presence_df = pd.DataFrame(joined_df)  # Convert GeoDataFrame to DataFrame
-        if PRESENCE_ONLY:
-            self.presence_df.to_csv(f"{source}_presence")
-        else:
-            self.presence_df.to_csv(f"{source}_presence_absence")
+    # Organize Bias shapefiles into a GeoDataFrame
+    bias_df = gpd.GeoDataFrame(data=None)
+    for bias_file in os.listdir(bias_dir):
+        if bias_file.endswith('.shp'):
+            bias_file = bias_dir + "\\" + bias_file
+            bias_df = gpd.read_file(bias_file)
+            break
+
+    # Organize Polygon shapefiles into a GeoDataFrame
+    var_index = 1
+    polygon_df = gpd.GeoDataFrame(data=None)
+    for polygon_file in os.listdir(polygon_dir):
+        if polygon_file.endswith('.shp'):
+            polygon_file = polygon_dir + "\\" + polygon_file
+            if var_index == 1:
+                polygon_df = gpd.read_file(polygon_file)
+                polygon_df = polygon_df[polygon_df['pointid'] > 0].rename(columns={'grid_code': f'bio_{var_index}'})
+            else:
+                temp_df = gpd.read_file(polygon_file).drop(columns='geometry')
+                temp_df = temp_df[temp_df['pointid'] > 0].rename(columns={'grid_code': f'bio_{var_index}'})
+                polygon_df = polygon_df.merge(right=temp_df, on='pointid')
+            var_index += 1
+
+    """Finalize Occurrence Data Frame"""
+    occurrence_joined_df = gpd.sjoin(point_df, polygon_df, op="within")
+    pd.DataFrame(occurrence_joined_df).to_csv(path_or_buf=fr"{data_dir}\{source}\occurrence_data.csv")
+
+    """Finalize Background Data Frame"""
+    bias_df.crs = "EPSG:4326"  # coordinate reference system
+    bias_joined_df = gpd.sjoin(bias_df, polygon_df, op="within")
+    pd.DataFrame(bias_joined_df).to_csv(path_or_buf=fr"{data_dir}\{source}\bias_data.csv")
+
+    """Finalize Survey Space Data Frame"""
+    pd.DataFrame(polygon_df.drop(columns='geometry')).to_csv(path_or_buf=fr"{data_dir}\{source}\climate_data.csv")
 
 
 if __name__ == "__main__":
-    pass
+    create_geodataframes()
