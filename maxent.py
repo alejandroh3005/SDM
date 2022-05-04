@@ -1,11 +1,74 @@
 """
-Author(s): Alejandro Hernandez, Nilay Nagar
-Last updated: March 28, 2022
+Author(s): Alejandro Hernandez
+Last updated: May 3, 2022
 Title: maxent.py
 """
-import os
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+
+class MaxEnt:
+    def __init__(self, **kwargs):
+        self.features: np.array(np.array) = None  # features values at sample
+        self.empirical_avg: np.array(np.array) = None  # empirical/arithmetic averages of features f1,...,fn
+
+        # normalize features f1,...,fn so that fj:X -> [0,1]
+        scaler = MinMaxScaler()
+        scaler.fit(X=self.features)
+        self.norm_features: np.array = scaler.transform(X=self.features)
+
+        # set hyper-parameters of maxent training
+        self.reg_params: np.array = np.std(self.features)
+        self.weights = [0]*len(self.features)
+
+    def predict(self, x) -> np.array:
+        """
+        Gibbs distribution takes feature weights and feature values to calculate a probability
+        :return:
+        """
+        w = self.weights
+        raw_probs = [np.exp(np.dot(w, x_i)) for x_i in x]
+        return raw_probs / np.sum(raw_probs)
+
+    def expected_value(self, x):
+        p = self.predict(x)
+        return np.dot(x,p)
+
+    def func_j(self, delta, j, exp_fj) -> float:
+        w = self.weights
+        b = self.reg_params
+        emp = self.empirical_avg
+        a = -delta * emp[j]
+        b = np.log((1 + exp_fj * (np.exp(delta) - 1)))
+        c = b[j] * (np.abs(w[j] + delta) + np.abs(w[j]))
+        return a + b + c
+
+    def fit(self, x, MAX_ITER=500):
+        self.sample = x
+        self.n_iter = 0
+        for t in range(MAX_ITER):
+            # find (j,d) to minimize Fj
+            min_j, min_Fj, min_d = 0, 0, 0
+
+            # for all possible feature weights
+            for j in range(len(self.weights)):
+                exp_fj = expected_value(self.features[j])
+                # calculate all candidate options of delta
+                d1 = ...
+                d2 = ...
+                d3 = -self.weights[j]
+                for d in [d1,d2,d3]:
+                    if self.weights[j] += d: continue	# weights cannot be negative, try next delta value
+                    fj = Fj(d,j,exp_fj)
+                    if fj < minFj:
+                        min_Fj = fj
+                        min_j = j
+                        min_d = d	# only recorded for debugging/curiousity
+            # update selected weight
+            self.weights[j] += min_d
+            self.n_iter += 1
+
+
 parent_dir = r"D:"
 data_dir = f"{parent_dir}\output\madagascar\maxent_input"
 
@@ -26,6 +89,10 @@ def get_reg_log_loss(feature_weights: np.array, empirical_averages: pd.Series, z
     """Regularized log loss is the function we will minimize during the training process"""
     return np.dot(-feature_weights, empirical_averages) + np.log(z_constant) + np.dot(reg_params, np.abs(feature_weights))
 
+def change_in_loss(empirical_averages:[], expected_averages:[], w:[], delta:float, j:int, beta:[]):
+    """TODO: complete"""
+    return delta * empirical_averages[j] + np.log(1 + (np.exp(delta) - 1) * expected_averages[j]) + w[j] * (abs(w+delta)-abs(w[j]))
+
 def main():
     X: np.matrix  # matrix of ENTIRE survey space, 2D array of bioclimatic values
     m: np.matrix  # matrix of sample space, 2D array of bioclimatic values
@@ -37,8 +104,8 @@ def main():
     cum_prob: np.array  # array of cumulative probabilities over samples space
 
     survey_space = pd.read_csv(data_dir + "\climate_data.csv")
-    empirical_averages = get_empirical_averages(survey_space)
-    n_features = len(empirical_averages)
+    emp_avg = get_empirical_averages(survey_space)
+    n_features = len(emp_avg)
     feature_weights = np.ones(n_features)
     reg_params = np.full((1,n_features), 0.1)
 
@@ -47,27 +114,7 @@ def main():
     """Training process occurs here, done with sequential-update algorithm"""
     MAX_ITER = 50
     MIN_CONVERGENCE = 0.0005
-    STEP_SIZE = 0.1
-    converged = False
-    old_log_loss = get_reg_log_loss(feature_weights, empirical_averages, Z, reg_params)
-    iter = 1
-    while not converged and iter <= MAX_ITER:
-        new_log_loss = get_reg_log_loss(feature_weights, empirical_averages, Z, reg_params)
-        if iter > 1 and abs(old_log_loss - new_log_loss) < MIN_CONVERGENCE:
-            converged = True
-        elif iter >= MAX_ITER:
-            break
-
-        # Batch gradient descent
-        gradient = [-weight*average + beta*abs(weight) for weight, average, beta in zip(feature_weights, empirical_averages, reg_params[0])]
-        for j in range(n_features):
-            delta = gradient[j] * STEP_SIZE
-            feature_weights[j] -= delta
-        print(f"\nIteration {iter}:")
-        print(new_log_loss  )
-        iter += 1
-
-
-
-if __name__ == "__main__":
-    main()
+    # for t=1,2,3,...
+    for j in range(MAX_ITER):
+        # find delta and j that maximize change in loss
+        option_a = np.log(emp_avg[j])
