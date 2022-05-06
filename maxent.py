@@ -11,7 +11,13 @@ def regularize_features(values: np.array, min=0, max=1) -> np.array:
     return feature_std * (max - min) + min
 
 def change_in_loss(emp_avg: float, exp_val: float, weight: float, delta: float, beta: float) -> float:
-    return delta * emp_avg + np.log(1 + (np.exp(delta) - 1) * exp_val) + beta * (abs(weight + delta) - abs(weight))
+    a = delta * emp_avg
+    b = np.log(1 + (np.exp(delta) - 1) * exp_val)
+    c = beta * (abs(weight + delta) - abs(weight))
+    chg_lss = a + b + c
+    # delta is nan
+    # print(delta)
+    return chg_lss
 
 # def get_reg_log_loss(feature_weights:np.array, empirical_averages:pd.Series, z_constant:float, reg_params:list) -> float:
 #    """Regularized log loss is the function we will minimize during the training process"""
@@ -43,35 +49,37 @@ class MaxEnt:
         p = self.predict(w)
         return np.dot(p, f_j)
 
-    def fit(self, MAX_ITER=500):
+    def fit(self, MAX_ITER=50):
         emp = self.empirical_avg
         w = self.weights
         b = self.reg_params
         for iter in range(MAX_ITER):
             # iteratively find the feature j (j) and change in feature j (d)
             # that minimizes change in regularized log loss
-            min_j, min_d, min_Fj = 0, 0, 0
+            min_j, min_d, min_Fj = 0, 0, None
             # for all possible features, test candidate values of delta
             # and keep track of the that pair maximizes Fj
             for j in range(len(w)):
                 exp_fj = self.expected_value(w=w, f_j=self.features[:,j])
-                deltas = [0,0, -w[j]]     # calculate the 3 candidate values of delta
-                deltas[0] = 0   # TODO compute candidate delta values
-                deltas[1] = 0
+                deltas = [None, None, -w[j]]  # calculate the 3 candidate values of delta
+                deltas[0] = 0  # np.log((emp[j] - b[j]) * (1 - exp_fj) / (exp_fj * (1 - emp[j] + b[j])))
+                deltas[1] = 0  # np.log((emp[j] + b[j]) * (1 - exp_fj) / (exp_fj * (1 - emp[j] - b[j])))
                 # remove all invalid candidates
-                if w[j] + deltas[0] < 0: deltas[0] = 0
+                if w[j] + deltas[0] < 0 or np.isnan(deltas[0]): deltas[0] = 0
                 if w[j] + deltas[1] > 0: deltas[1] = 0
                 # from all pairs of delta and j, compute minimum change in reg. log loss
                 for i, d in enumerate(deltas):
-                    if d == 0: continue     # ignore delta values of zero
-                    if w[j] + d < 0: exit("Features weights must be non-negative.")
+                    # if d == 0: continue     # ignore delta values of zero
                     fj = change_in_loss(emp_avg=emp[j], exp_val=exp_fj, weight=w[j], delta=d, beta=b[j])
-                    if fj < min_Fj:
+                    if j == 0:
+                        min_Fj = fj
+                    if fj <= min_Fj:
                         min_Fj = fj
                         min_j = j
-                        min_d = i   # only recorded for debugging/curiosity
+                        min_d = d
                 # end for
             # update weight to minimize change in regularized log loss
+            # print(f"Iteration :{iter}: changed feature {min_j} from {w[min_j]} to {w[min_j] + min_d}")
             w[min_j] += min_d
         # end for
         # Once maximum iterations have been reached, set class weights to learned weights
@@ -84,15 +92,14 @@ def main():
     presence_df = presence_df[['pointid'] + [f'bio_{i}' for i in range(1, 11)]]
     maxent = MaxEnt(presence_df=presence_df)
 
-    # predictions = maxent.predict(w=maxent.weights)
     # feature_expectations = maxent.expected_value(w=maxent.weights, f_j=maxent.features[:,1])
 
     # fit the model
     maxent.fit()
+    predictions = maxent.predict(w=maxent.weights)
+
+    print(predictions)
     print(maxent.weights)
-    print(maxent.empirical_avg)
-    print(maxent.reg_params)
-    print(maxent.features[0])
 
 
 if __name__ == '__main__':
